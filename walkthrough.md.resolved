@@ -1,0 +1,59 @@
+# Walkthrough: Agente de Adimplência
+
+Este sistema automatiza o cruzamento de dados de assinantes entre as plataformas Guru e AppMax, garantindo precisão via motor de matching e total transparência via auditoria (dossiê).
+
+## 🚀 Como Executar
+
+### 1. Inicialização
+O sistema já está configurado na porta **8080**.
+```bash
+npm run dev
+```
+Acesse [http://localhost:8080](http://localhost:8080).
+
+### 2. Fluxo de Operação
+1. **Login**: Autentique-se com sua conta Supabase Auth em `/login`.
+2. **Executar Pipeline**: No Dashboard principal, clique em **🚀 Executar Pipeline**. Isso irá:
+
+   - Buscar assinaturas ativas na Guru API.
+   - Carregar transações do AppMax (Mock JSON).
+   - Normalizar CPFs, telefones e e-mails.
+   - Realizar o matching usando a cadeia: **CPF → Telefone → E-mail**.
+   - Classificar o plano (Anual vs Recorrente).
+   - Registrar cada decisão no banco de auditoria.
+3. **Análise de Resultados**: Vá para a aba **Resultados** para ver o merge. Filtre por status (Ambíguo, Match, etc.) ou adimplência.
+4. **Consulta do Dossiê**: Na lista de resultados ou na aba **Auditoria**, você pode ver o passo a passo de como o sistema chegou a cada conclusão.
+
+---
+
+## 🏗️ Destaques da Arquitetura
+
+### Motor de Matching (Chain of Responsibility)
+Implementado em [src/services/matching-engine.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/services/matching-engine.ts), permite tentar diferentes chaves de identificação em ordem de prioridade. Se um conflito for detectado (ex: um CPF aponta para dois e-mails diferentes na AppMax), o sistema lança uma [AmbiguityException](file:///c:/Users/joaom/Clientes/Clubinho/src/domain/exceptions.ts#9-25) e marca como **AMBÍGUO** para análise manual.
+
+### Auditoria e Traceability
+Cada execução do pipeline gera um `trace_id` único. Cada regra aplicada (ex: `CpfMatchRule`, `ClassifyPlanRule`) gera um registro no `audit_logs` com:
+- **Payload de entrada/saída**: O estado exato dos dados.
+- **Mensagem explicativa**: Texto legível explicando a decisão.
+- **Status**: Resultado técnico da regra.
+
+### Design Premium
+- Interface em **Next.js** com tema escuro elegante.
+- Dashboard com cards de estatísticas em tempo real.
+- Timeline visual para auditoria.
+- Feedback instantâneo durante a execução do pipeline.
+
+---
+
+## ✅ Verificação Técnica Realizada
+
+1. **Persistência Supabase**: Tabelas `assinantes`, `merge_results` e `audit_logs` criadas com RLS e índices.
+2. **Consumo de APIs**: Adapter da Guru API implementado com Bearer Token. Integration pronta para AppMax real.
+3. **Normalização**: Regex rigoroso para CPFs e telefones (forçando DDI 55).
+4. **Build**: Verificado via `npm run build` (Next.js 16.1.6).
+5. **Git**: Repositório inicializado e commit realizado.
+
+---
+
+> [!TIP]
+> Para trocar os dados de teste da AppMax, edite o arquivo [src/adapters/appmax-mock-data.json](file:///c:/Users/joaom/Clientes/Clubinho/src/adapters/appmax-mock-data.json).

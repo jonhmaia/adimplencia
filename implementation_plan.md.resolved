@@ -1,0 +1,230 @@
+# Agente de Análise de Adimplência
+
+Sistema ETL + Matching + Auditoria para análise de adimplência de assinantes. Consome Guru API e AppMax API (mock), cruza bases por CPF/telefone/e-mail, classifica planos e registra dossiê de auditoria completo.
+
+## Decisões de Projeto
+
+> [!IMPORTANT]
+> **Supabase existente**: Será usado o projeto `adimplencia` (`usqtzkkxrfucbvpsbrdf`) em `sa-east-1`.
+> As tabelas existentes (`suporte_memory`, `documents`) **não serão alteradas**.
+
+- **Framework**: Next.js 14+ com App Router e TypeScript
+- **Validação**: Zod para schemas de domínio
+- **Banco**: Supabase (PostgreSQL) para auth + tabelas de merge/auditoria
+- **Porta**: 8080 (conforme regra do usuário)
+- **Padrões**: Clean Architecture, Chain of Responsibility para matching
+
+## User Review Required
+
+> [!WARNING]
+> **Token Guru**: O token `a13848ee-878b-44c9-b423-43c800e13dbc|JgAuP95lWBcjTBNS4HJIOYc40xQrGEJylGRo8CVScf952a08` será configurado via variável de ambiente `GURU_API_TOKEN`. A URL base da API Guru precisa ser definida em `GURU_API_URL` no `.env.local`.
+
+> [!CAUTION]
+> **AppMax Mock**: Como a integração real não está disponível, será criado um adapter mockado que lê de um arquivo CSV/JSON. Quando o endpoint real for disponibilizado, basta implementar a interface `AppMaxAdapter`.
+
+---
+
+## Proposed Changes
+
+### 1. Supabase — Tabelas e RLS
+
+Criação de 3 novas tabelas no projeto `usqtzkkxrfucbvpsbrdf`:
+
+#### Tabela `assinantes`
+Armazena os dados normalizados de assinantes vindos do merge.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id | uuid (PK) | Identificador único |
+| cpf | text | CPF normalizado (somente dígitos) |
+| telefone | text | Telefone normalizado (com DDI 55) |
+| email | text | E-mail normalizado (lowercase, trimmed) |
+| nome | text | Nome completo |
+| fonte | text | Origem do registro (GURU / APPMAX) |
+| dados_originais | jsonb | Payload original |
+| created_at | timestamptz | Data de criação |
+
+#### Tabela `merge_results`
+Resultado do cruzamento entre Guru e AppMax.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id | uuid (PK) | Identificador único |
+| trace_id | uuid | ID de rastreio do pipeline |
+| assinante_guru_id | uuid (FK) | Ref para assinantes (Guru) |
+| assinante_appmax_id | uuid (FK, nullable) | Ref para assinantes (AppMax) |
+| chave_match | text | Qual chave fez o match (CPF/TELEFONE/EMAIL) |
+| status_match | text | MATCH_EXACT, AMBIGUO, SEM_MATCH |
+| tipo_plano | text | ANUAL_COMPLETO, RECORRENTE |
+| valor_assinatura | numeric | Valor da assinatura |
+| adimplente | boolean | Se está adimplente |
+| detalhes | jsonb | Dados complementares |
+| created_at | timestamptz | Data de criação |
+
+#### Tabela `audit_logs`
+Dossiê de execução — cada passo de cada regra.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id | uuid (PK) | Identificador único |
+| trace_id | uuid | Rastreio do pipeline |
+| timestamp | timestamptz | Momento exato |
+| entidade_id | text | CPF ou chave principal |
+| regra_avaliada | text | Nome da regra |
+| resultado_regra | text | MATCH_EXACT, AMBIGUO, etc. |
+| payload_contexto | jsonb | JSON de entrada/saída |
+| mensagem | text | Descrição legível |
+| created_at | timestamptz | Data de criação |
+
+RLS habilitado em todas as tabelas, com policies vinculadas a `auth.uid()`.
+
+---
+
+### 2. Next.js — Estrutura do Projeto
+
+```
+c:\Users\joaom\Clientes\Clubinho\
+├── .env.local
+├── next.config.ts
+├── package.json
+├── tsconfig.json
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx              # Dashboard
+│   │   ├── login/page.tsx        # Login com Supabase Auth
+│   │   ├── merge/page.tsx        # Resultados do merge
+│   │   ├── auditoria/page.tsx    # Dossiê de auditoria
+│   │   └── api/
+│   │       ├── pipeline/route.ts      # Dispara o pipeline
+│   │       ├── audit-logs/route.ts    # Consulta audit logs
+│   │       └── merge-results/route.ts # Consulta resultados
+│   ├── domain/
+│   │   ├── entities.ts           # Schemas Zod
+│   │   ├── enums.ts              # PlanType, MatchStatus, etc.
+│   │   └── exceptions.ts         # AmbiguityException
+│   ├── adapters/
+│   │   ├── guru-adapter.ts       # Interface + implementação Guru
+│   │   ├── appmax-adapter.ts     # Interface + mock AppMax
+│   │   └── appmax-mock-data.json # Dados mock
+│   ├── services/
+│   │   ├── matching-engine.ts    # Chain of Responsibility
+│   │   ├── plan-classifier.ts    # Classificação de plano
+│   │   ├── normalizer.ts         # CPF, telefone, e-mail
+│   │   ├── pipeline.ts           # Orquestrador do pipeline
+│   │   └── audit-service.ts      # Gravação de auditoria
+│   ├── lib/
+│   │   └── supabase.ts           # Cliente Supabase
+│   └── components/
+│       ├── dashboard/
+│       ├── merge-table/
+│       ├── audit-viewer/
+│       └── ui/                   # Componentes base
+```
+
+---
+
+### 3. Camada de Domínio
+
+#### [NEW] [entities.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/domain/entities.ts)
+Schemas Zod para `Assinante`, `TransacaoAppMax`, `AuditEntry`, `MergeResult`.
+
+#### [NEW] [enums.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/domain/enums.ts)
+Enums: `PlanType` (ANUAL_COMPLETO, RECORRENTE), `MatchStatus` (MATCH_EXACT, AMBIGUO, SEM_MATCH), `RuleResult`.
+
+#### [NEW] [exceptions.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/domain/exceptions.ts)
+`AmbiguityException` — lançada quando o motor detecta colisão.
+
+---
+
+### 4. Camada de Integração (Adapters)
+
+#### [NEW] [guru-adapter.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/adapters/guru-adapter.ts)
+- Interface `GuruAdapter` com método `fetchAssinaturasAtivas()`
+- Implementação `GuruApiAdapter` que consome a API REST com Bearer Token
+- Normaliza dados recebidos para o schema `Assinante`
+
+#### [NEW] [appmax-adapter.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/adapters/appmax-adapter.ts)
+- Interface `AppMaxAdapter` com método `fetchTransacoes()`
+- Implementação `AppMaxMockAdapter` que lê de `appmax-mock-data.json`
+- Contrato: CPF, telefone, e-mail, data, valor_pago, status, transacao_id
+
+---
+
+### 5. Motor de Regras (Matching Engine)
+
+#### [NEW] [normalizer.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/services/normalizer.ts)
+- `normalizeCpf(cpf)` — extrai somente dígitos
+- `normalizeTelefone(tel)` — dígitos + DDI 55
+- `normalizeEmail(email)` — trim + lowercase
+
+#### [NEW] [matching-engine.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/services/matching-engine.ts)
+Chain of Responsibility com 3 handlers:
+1. `CpfMatchHandler` — tenta match por CPF
+2. `TelefoneMatchHandler` — tenta match por telefone
+3. `EmailMatchHandler` — tenta match por e-mail
+
+Cada handler registra auditoria e passa adiante se não achar. Se encontrar múltiplos registros, lança `AmbiguityException`.
+
+#### [NEW] [plan-classifier.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/services/plan-classifier.ts)
+- `valor > 119.90` → `ANUAL_COMPLETO`
+- `valor <= 119.90` → `RECORRENTE`
+
+---
+
+### 6. Camada de Auditoria
+
+#### [NEW] [audit-service.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/services/audit-service.ts)
+- Gera `trace_id` (UUID v4) por execução do pipeline
+- Grava cada passo no Supabase (`audit_logs`)
+- Método `registrar(traceId, entidadeId, regra, resultado, payload, mensagem)`
+
+---
+
+### 7. API Routes
+
+#### [NEW] [pipeline/route.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/app/api/pipeline/route.ts)
+`POST /api/pipeline` — Executa o pipeline completo: fetch Guru + AppMax → normalize → match → classify → persiste resultados e logs.
+
+#### [NEW] [audit-logs/route.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/app/api/audit-logs/route.ts)
+`GET /api/audit-logs?trace_id=X` — Retorna dossiê de auditoria.
+
+#### [NEW] [merge-results/route.ts](file:///c:/Users/joaom/Clientes/Clubinho/src/app/api/merge-results/route.ts)
+`GET /api/merge-results` — Lista resultados do merge com filtros.
+
+---
+
+### 8. Interface (Dashboard)
+
+#### [NEW] [login/page.tsx](file:///c:/Users/joaom/Clientes/Clubinho/src/app/login/page.tsx)
+Login com Supabase Auth (email/password).
+
+#### [NEW] [page.tsx](file:///c:/Users/joaom/Clientes/Clubinho/src/app/page.tsx)
+Dashboard com cards de resumo: total processados, adimplentes, inadimplentes, ambíguos.
+
+#### [NEW] [merge/page.tsx](file:///c:/Users/joaom/Clientes/Clubinho/src/app/merge/page.tsx)
+Tabela de resultados do merge com filtros (status, tipo de plano, adimplência).
+
+#### [NEW] [auditoria/page.tsx](file:///c:/Users/joaom/Clientes/Clubinho/src/app/auditoria/page.tsx)
+Visualizador de dossiê: timeline com cada regra aplicada, payload de entrada/saída, resultado.
+
+---
+
+## Verification Plan
+
+### Testes Automatizados (via API Routes)
+
+1. **Pipeline com dados mock**: Executar `POST /api/pipeline` via browser e verificar que:
+   - Registros são criados em `merge_results`
+   - Logs de auditoria são criados em `audit_logs`
+   - Classificação de planos está correta
+
+2. **Consulta de auditoria**: Após executar o pipeline, consultar `GET /api/audit-logs?trace_id=<id>` e verificar o dossiê completo.
+
+### Verificação Manual
+
+1. **Login**: Acessar `http://localhost:8080/login`, autenticar com Supabase Auth e verificar redirecionamento ao dashboard.
+2. **Dashboard**: Verificar cards com contagens corretas.
+3. **Resultados do Merge**: Filtrar por status AMBIGUO e verificar que registros com colisão aparecem corretamente.
+4. **Auditoria**: Clicar em um registro e verificar o dossiê completo com todas as regras aplicadas.
+5. **Verificar Supabase**: Conferir dados diretamente nas tabelas via dashboard do Supabase.

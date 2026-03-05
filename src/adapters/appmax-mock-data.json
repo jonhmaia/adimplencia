@@ -1,0 +1,56 @@
+[
+  {
+    "cpf": "123.456.789-00",
+    "telefone": "(11) 99876-5432",
+    "email": "maria.silva@email.com",
+    "data": "2026-01-15",
+    "valor_pago": 297.00,
+    "status": "APROVADO",
+    "transacao_id": "TXN-001"
+  },
+  {
+    "cpf": "987.654.321-00",
+    "telefone": "21987654321",
+    "email": "joao.santos@email.com",
+    "data": "2026-02-01",
+    "valor_pago": 49.90,
+    "status": "APROVADO",
+    "transacao_id": "TXN-002"
+  },
+  {
+    "cpf": "111.222.333-44",
+    "telefone": "+55 31 91234-5678",
+    "email": "Ana.Costa@Email.COM",
+    "data": "2026-02-15",
+    "valor_pago": 119.90,
+    "status": "APROVADO",
+    "transacao_id": "TXN-003"
+  },
+  {
+    "cpf": "555.666.777-88",
+    "telefone": "4198765432",
+    "email": "pedro.lima@email.com",
+    "data": "2026-03-01",
+    "valor_pago": 297.00,
+    "status": "PENDENTE",
+    "transacao_id": "TXN-004"
+  },
+  {
+    "cpf": "123.456.789-00",
+    "telefone": "(11) 99876-1111",
+    "email": "maria.outro@email.com",
+    "data": "2026-01-20",
+    "valor_pago": 49.90,
+    "status": "APROVADO",
+    "transacao_id": "TXN-005"
+  },
+  {
+    "cpf": "999.888.777-66",
+    "telefone": "(85) 91234-5678",
+    "email": "lucas.fernandes@email.com",
+    "data": "2026-02-28",
+    "valor_pago": 297.00,
+    "status": "APROVADO",
+    "transacao_id": "TXN-006"
+  }
+]
