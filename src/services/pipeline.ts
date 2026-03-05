@@ -70,7 +70,7 @@ export class PipelineService {
             mensagem: `Pipeline iniciado com trace_id=${traceId}`,
         });
 
-        const guruRaw = await this.guruAdapter.fetchAssinaturasAtivas();
+        const guruRaw = await this.guruAdapter.fetchAssinaturas();
         const appmaxTransacoes = await this.appmaxAdapter.fetchTransacoes();
         const appmaxAssinantes = this.appmaxAdapter.toAssinantes(appmaxTransacoes);
 

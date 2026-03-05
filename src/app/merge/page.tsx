@@ -107,6 +107,7 @@ export default function MergePage() {
                         Resultados
                     </Link>
                     <Link href="/auditoria">Auditoria</Link>
+                    <Link href="/debug">Debug</Link>
                 </div>
 
                 <div className="navbar-actions">

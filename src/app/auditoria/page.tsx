@@ -124,6 +124,7 @@ function AuditoriaContent() {
                     <Link href="/auditoria" className="active">
                         Auditoria
                     </Link>
+                    <Link href="/debug">Debug</Link>
                 </div>
 
                 <div className="navbar-actions">
