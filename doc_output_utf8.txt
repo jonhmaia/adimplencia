@@ -1,0 +1,156 @@
+[0] AGENTE DE ANALISE DE ADIMPLENCIA
+Especificacao funcional para desenvolvimento
+[1] 
+[2] 1) Objetivo do agente
+[3] Automatizar a verificacao de adimplencia e determinar qual e o proximo kit elegivel para envio por assinante, usando multiplas fontes (painel interno, export do Guru Manager, export de pagamentos AppMax e planilha “Materiais Entregues por Kit”).
+[4] O agente deve:
+[5] Classificar o assinante por tipo de plano (Anual Completo vs Recorrente).
+[6] Determinar kit alvo (regra do “primeiro X”).
+[7] Determinar se esta adimplente para o kit alvo.
+[8] Produzir saidas operacionais (status + kit alvo + justificativa).
+[9] Para recorrentes, gerar relatorio de divergencias quando existirem pagamentos com valor diferente do valor do plano.
+[10] Opcionalmente, escrever de volta na planilha “Materiais Entregues por Kit” as marcacoes (ex.: “PAGO”).
+[11] 2) Glossario e regras de negocio
+[12] 2.1 Tipos de plano (por valor)
+[13] Anual Completo: valor_assinatura > 119,90
+[14] Recorrente: valor_assinatura <= 119,90
+[15] Regra mestre: o valor define o tipo. Se outra base classificar diferente, prevalece valor_assinatura.
+[16] 2.2 Definicoes de status
+[17] Adimplente (Anual Completo): assinatura ATIVA em uma fonte valida (Painel interno OU export de assinaturas ativas do Guru).
+[18] Adimplente (Recorrente): possui N pagamentos validos suficientes para cobrir o kit alvo; pagamento valido = status confirmado/pago e valor exatamente igual ao valor da assinatura.
+[19] 2.3 Regra do kit alvo (primeiro X)
+[20] O kit a analisar/enviar nao e necessariamente o “kit do ciclo de 30 dias”; e o kit correspondente ao primeiro kit marcado como nao pago.
+[21] Na planilha “Materiais Entregues por Kit”, para cada kit, a celula pode conter:
+[22] Uma data (kit enviado/processado).
+[23] “X” (nao pago / nao enviar).
+[24] Vazio (nao processado; tratar conforme padrao).
+[25] Regra:
+[26] Encontrar a ultima data preenchida (ultimo kit efetivamente enviado).
+[27] Identificar a primeira ocorrencia de “X” apos isso.
+[28] O kit alvo e o primeiro kit com “X”.
+[29] Se nao existir “X” depois da ultima data, kit alvo = ultimo_enviado + 1.
+[30] Exemplo: o ciclo indicaria kit 4, mas a planilha tem Kit 1 com data, Kit 2 = X e Kit 3 = X. Se entra o 2o pagamento, o kit correto e o Kit 2 (primeiro X).
+[31] 3) Entradas (data sources) e formatos esperados
+[32] 3.1 Painel interno (Anuais completos)
+[33] URL manual atual: https://painel.coracoespreciosos.com.br/subscriptions
+[34] Ideal: expor via API/endpoint autenticado consultavel por CPF/telefone/e-mail.
+[35] Campo minimo: subscription_status (ATIVA/INATIVA/CANCELADA/etc.)
+[36] 3.2 Export de assinaturas ativas (Guru Manager)
+[37] Arquivo: XLS/XLSX exportado.
+[38] Regra: se o assinante consta como ativo, considerar adimplente (para Anual Completo fora do painel).
+[39] 3.3 Export de pagamentos (AppMax)
+[40] Arquivo: CSV exportado.
+[41] Campos minimos desejados por linha:
+[42] Identificadores do pagador/assinante: CPF, telefone, e-mail, nome.
+[43] Data do pagamento.
+[44] Valor pago.
+[45] Status do pagamento (pago/confirmado vs pendente/estornado/chargeback).
+[46] ID da transacao/pedido.
+[47] Regras:
+[48] Para recorrente, contar como pagamento valido somente status confirmado/pago e valor exatamente igual ao valor_assinatura.
+[49] Pagamentos confirmados com valor diferente de valor_assinatura nao contam para quitar kit e devem ser reportados no Relatorio de Divergencias.
+[50] 3.4 Planilha “Materiais Entregues por Kit”
+[51] Fonte: Google Sheets / Excel / ODS.
+[52] Necessario: CPF (preferencial) e/ou telefone e/ou e-mail para localizar a linha do assinante.
+[53] Colunas “Kit 1…Kit N” com DATA / X / vazio.
+[54] 4) Identificacao do assinante (matching)
+[55] Como nao ha ID interno unico confiavel, o agente deve resolver por chaves nesta ordem:
+[56] CPF (normalizado: somente digitos)
+[57] Telefone (normalizado: somente digitos; suportar com/sem DDI 55)
+[58] E-mail (lowercase + trim)
+[59] Matching deve suportar match exato por qualquer chave disponivel e fallback conforme disponibilidade em cada base.
+[60] Se houver multiplos matches (colisao), retornar status AMBIGUO com candidatos e nao atualizar planilhas automaticamente.
+[61] 5) Algoritmo (alto nivel)
+[62] Pipeline principal (por assinante):
+[63] Carregar perfil do assinante (valor_assinatura e chaves cpf/telefone/email).
+[64] Classificar tipo do plano: >119,90 = Anual Completo; <=119,90 = Recorrente.
+[65] Determinar kit alvo usando a planilha “Materiais Entregues por Kit”: kit_alvo = first_X_after_last_sent().
+[66] Decidir adimplencia:
+[67]   - Anual Completo: ATIVA no painel => adimplente; senao, consta no XLS de ativos do Guru => adimplente; senao => inadimplente.
+[68]   - Recorrente: carregar pagamentos do CSV AppMax; separar em validos, divergentes e invalidos por status; gerar Relatorio de Divergencias se houver divergentes; adimplente se count(validos) >= kit_alvo.
+[69] Gerar saida (status, kit_alvo, justificativa, alertas).
+[70] Opcional: atualizar planilha marcando “PAGO” no kit_alvo quando quitado (recomendado iniciar em modo minimo, sem sobrescrever outros kits).
+[71] 6) Regras especificas da planilha “Materiais Entregues por Kit”
+[72] 6.1 Funcao first_X_after_last_sent(row)
+[73] Input: linha do assinante com colunas de kits (K1..Kn).
+[74] Passos:
+[75] Determinar ultimo_enviado: maior k onde a celula contem uma data valida (ou string parseavel como data).
+[76] A partir de k+1, procurar menor j com celula == 'X' (trim + case-insensitive).
+[77] Se encontrou 'X', retornar j.
+[78] Se nao encontrou 'X', retornar k+1.
+[79] Se nao existe nenhuma data e tambem nao existe X, retornar 1.
+[80] 6.2 Escrita na planilha (opcional)
+[81] Se adimplente para kit_alvo, marcar a celula kit_alvo = 'PAGO' (ou data, conforme padrao).
+[82] Recomendacao: iniciar com Modo minimo (somente escrever 'PAGO' no kit_alvo).
+[83] Evitar sobrescrever automaticamente 'X' em kits futuros ate que a regra esteja 100% definida e testada.
+[84] 6.3 Modos de atualizacao (config)
+[85] Modo minimo: so atualiza 'PAGO' no kit_alvo quando quitado.
+[86] Modo estrito: alem disso, aplica marcacoes de 'X' em kits futuros conforme regra operacional (exige definicao precisa do calculo do “kit do ciclo” e quando escrever X).
+[87] 7) Regra: Relatorio de Divergencias (Recorrentes)
+[88] 7.1 Quando registrar
+[89] Para assinantes recorrentes: sempre que existir pagamento confirmado/pago com valor diferente de valor_assinatura, registrar no relatorio de divergencias.
+[90] Motivo: pode indicar upgrade/downgrade, cupom, ajuste manual, proporcionalidade, etc. Isso exige analise humana.
+[91] 7.2 O que entra no relatorio
+[92] Um registro por pagamento divergente, contendo:
+[93] Identificacao do assinante (CPF/telefone/e-mail).
+[94] valor_assinatura esperado e valor_pago encontrado.
+[95] Data do pagamento.
+[96] ID da transacao/pedido.
+[97] Status do pagamento.
+[98] kit_alvo na analise atual.
+[99] Totais: qtd_pagamentos_validos e qtd_pagamentos_divergentes.
+[100] Observacao automatica (ex.: valor maior/menor que o esperado).
+[101] 7.3 Formato do relatorio
+[102] CSV/Excel (ex.: Relatorio_Divergencias_Adimplencia.csv).
+[103] Ou aba separada em Google Sheets (ex.: “Divergencias AppMax”).
+[104] Ou tabela em banco, se o produto evoluir.
+[105] 7.4 Impacto na decisao de adimplencia
+[106] Pagamento divergente nao conta para qtd_pagamentos_validos.
+[107] A presenca de divergencia deve gerar alerta na saida (ex.: PAGAMENTO_DIVERGENTE_VALOR).
+[108] 8) Casos de borda / excecoes
+[109] Recorrente com pagamento confirmado, mas valor != assinatura: nao contar como valido; registrar no relatorio de divergencias; continuar calculo com pagamentos validos restantes.
+[110] Chargeback/estorno/pagamento pendente: nao contar como valido nem como divergente (opcional: relatorio separado de nao confirmados).
+[111] Multiplos pagamentos no mesmo mes: regra atual conta por total de pagamentos validos (nao por mes).
+[112] Anual Completo nao encontrado no painel e nem no Guru ativo: inadimplente (ou DADOS_INSUFICIENTES conforme politica).
+[113] Ambiguidade de match: retornar AMBIGUO e nao alterar planilhas.
+[114] Planilha sem datas e sem X: kit_alvo = 1.
+[115] 9) Saida esperada (payload + relatorio)
+[116] 9.1 Payload da analise (exemplo)
+[117] {
+  "assinante": {
+    "cpf": "12345678900",
+    "telefone": "5562999999999",
+    "email": "exemplo@email.com",
+    "valor_assinatura": 119.90,
+    "tipo_plano": "RECORRENTE"
+  },
+  "kit_alvo": 6,
+  "adimplencia": {
+    "status": "INADIMPLENTE",
+    "pagamentos_validos": 5,
+    "criterio": "pagamentos_confirmados_com_valor_exato"
+  },
+  "alertas": [
+    "PAGAMENTO_DIVERGENTE_VALOR: existem pagamentos confirmados com valor diferente do valor da assinatura; revisar relatorio"
+  ]
+}
+[118] 9.2 Linha no relatorio de divergencias (exemplo)
+[119] {
+  "cpf": "12345678900",
+  "telefone": "5562999999999",
+  "email": "exemplo@email.com",
+  "valor_assinatura_esperado": 119.90,
+  "valor_pago": 99.90,
+  "data_pagamento": "2026-02-10",
+  "status_pagamento": "PAGO",
+  "transacao_id": "APPMAX-ABC123",
+  "kit_alvo": 6,
+  "pagamentos_validos_total": 5,
+  "pagamentos_divergentes_total": 1,
+  "observacao": "Valor pago menor que o esperado; possivel downgrade/cupom/ajuste"
+}
+[120] 10) Criterios de aceitacao (QA)
+[121] Recorrente: pagamento confirmado com valor diferente nao aumenta pagamentos_validos, mas gera registro no relatorio de divergencias.
+[122] Recorrente: adimplente para kit 6 apenas se pagamentos_validos >= 6 (valor exato).
+[123] Kit alvo sempre segue a regra do primeiro X apos ultima data, mesmo que o “ciclo” sugira outro kit.
+[124] Ambiguidade de match: nao altera planilhas e retorna AMBIGUO com candidatos.

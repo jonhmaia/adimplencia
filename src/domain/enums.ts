@@ -37,5 +37,34 @@ export enum RuleResult {
 /** Fonte de dados do assinante */
 export enum FonteDados {
     GURU = "GURU",
-    APPMAX = "APPMAX",
+    PLANILHA = "PLANILHA",
+}
+
+/** Status de pagamento da planilha */
+export enum StatusPagamento {
+    APROVADO = "Pagamento Aprovado",
+    NAO_AUTORIZADO = "Não Autorizado",
+    PENDENTE = "Pagamento Pendente",
+    ESTORNADO = "Estornado",
+    RECUSADO_RISCO = "Recusado por Risco",
+    CHARGEBACK_TRATATIVA = "Chargeback em Tratativa",
+    CHARGEBACK_GANHO = "Chargeback Ganho",
+    CHARGEBACK_DISPUTA = "Chargeback em Disputa",
+    ANALISE_ANTIFRAUDE = "Análise Antifraude",
+}
+
+/** Status de um kit na planilha de materiais */
+export enum KitStatus {
+    ENVIADO = "ENVIADO",
+    NAO_PAGO = "NAO_PAGO",
+    NAO_PROCESSADO = "NAO_PROCESSADO",
+    COM_MATERIAIS = "COM_MATERIAIS",
+}
+
+/** Status de adimplência do assinante */
+export enum AdimplenciaStatus {
+    ADIMPLENTE = "ADIMPLENTE",
+    INADIMPLENTE = "INADIMPLENTE",
+    AMBIGUO = "AMBIGUO",
+    DADOS_INSUFICIENTES = "DADOS_INSUFICIENTES",
 }

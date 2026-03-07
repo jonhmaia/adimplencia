@@ -121,7 +121,7 @@ export default function MergePage() {
                 <div className="page-header">
                     <div>
                         <h1>Resultados do Merge</h1>
-                        <p>Cruzamento entre assinantes Guru e AppMax</p>
+                        <p>Cruzamento entre assinantes Guru e Planilha de Pedidos</p>
                     </div>
                 </div>
 

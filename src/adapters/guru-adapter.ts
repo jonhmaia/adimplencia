@@ -60,25 +60,73 @@ export class GuruApiAdapter implements GuruAdapter {
                 const mapped = items.map((item: unknown) => {
                     const record = item as Record<string, unknown>;
                     const contact = (record.contact || record.subscriber || {}) as Record<string, unknown>;
+                    const product = (record.product || {}) as Record<string, unknown>;
+                    const productGroup = (product.group || {}) as Record<string, unknown>;
+
+                    // Montar telefone completo com DDI
+                    const phoneLocalCode = String(contact.phone_local_code || "55");
+                    const phoneNumber = String(contact.phone_number || contact.telefone || record.telefone || "");
+                    const telefoneCompleto = phoneNumber ? `${phoneLocalCode}${phoneNumber}` : "";
 
                     return {
                         cpf: String(contact.doc || contact.cpf || record.cpf || ""),
-                        telefone: String(contact.phone_number || contact.telefone || record.telefone || ""),
+                        telefone: telefoneCompleto,
                         email: String(contact.email || record.email || ""),
                         nome: String(contact.name || contact.nome || record.nome || ""),
                         fonte: FonteDados.GURU,
-                        dados_originais: record,
+                        dados_originais: {
+                            // Identificação
+                            guru_id: String(record.id || ""),
+                            contact_id: String(contact.id || ""),
+                            subscription_code: String(record.subscription_code || ""),
+
+                            // Status da assinatura
+                            last_status: String(record.last_status || ""),
+                            last_status_at: record.last_status_at,
+                            cancel_at_cycle_end: record.cancel_at_cycle_end,
+                            cancelled_at: record.cancelled_at,
+                            is_cycling: record.is_cycling,
+
+                            // Ciclos e cobranças
+                            charged_every_days: record.charged_every_days,
+                            charged_times: record.charged_times,
+                            cycle_start_date: String(record.cycle_start_date || ""),
+                            cycle_end_date: String(record.cycle_end_date || ""),
+                            next_cycle_at: String(record.next_cycle_at || ""),
+
+                            // Produto
+                            product_id: String(product.id || ""),
+                            product_name: String(product.name || ""),
+                            product_marketplace_id: String(product.marketplace_id || ""),
+                            product_marketplace_name: String(product.marketplace_name || ""),
+                            product_group_id: productGroup.id || null,
+                            product_group_name: String(productGroup.name || ""),
+
+                            // Pagamento
+                            payment_method: String(record.payment_method || ""),
+
+                            // Datas
+                            started_at: record.started_at,
+                            created_at: record.created_at,
+                            updated_at: record.updated_at,
+
+                            // Trial
+                            trial_started_at: record.trial_started_at,
+                            trial_finished_at: record.trial_finished_at,
+
+                            // Contratos
+                            contracts: record.contracts,
+                            own_engine: record.own_engine,
+                        } as unknown as Record<string, unknown>,
                     } satisfies Assinante;
                 });
 
                 allAssinantes.push(...mapped);
 
-                // Lógica de parada baseada na estrutura comum de APIs paginadas
-                // Se o retorno tiver metadados de paginação (last_page)
+                // Parada baseada na estrutura de APIs paginadas
                 if (data.last_page && currentPage >= data.last_page) {
                     hasMore = false;
                 } else if (!data.last_page && items.length < 50) {
-                    // Se não tiver metadados, mas a página veio incompleta, é a última
                     hasMore = false;
                 } else {
                     currentPage++;
